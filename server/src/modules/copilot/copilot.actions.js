@@ -588,11 +588,14 @@ const send_invoice = {
       where: { id: p.invoiceId },
       select: {
         invoiceNumber: true, status: true, total: true, amountPaid: true, currency: true,
-        dueDate: true, billToName: true, billToEmail: true,
+        dueDate: true, billToName: true, billToEmail: true, isActive: true,
         client: { select: { companyName: true, email: true } },
       },
     });
     if (!invoice) throw ApiError.badRequest(`No invoice with id ${p.invoiceId}.`);
+    if (!invoice.isActive) {
+      throw ApiError.badRequest("That invoice is inactive and cannot be sent. Reactivate it first.");
+    }
     if (invoice.status === "CANCELLED") {
       throw ApiError.badRequest("That invoice is cancelled and cannot be sent.");
     }

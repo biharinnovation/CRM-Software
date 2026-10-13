@@ -75,6 +75,20 @@ function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+/** Only these roles may see an invoice that has been deactivated. */
+const INACTIVE_VIEWERS = ["OWNER", "ADMIN"];
+const canSeeInactive = (user) => INACTIVE_VIEWERS.includes(user?.role);
+
+/**
+ * An inactive invoice is frozen: no edits, payments or sends until it is
+ * reactivated. Checked on every write path, not just in the UI.
+ */
+function assertActive(invoice) {
+  if (invoice && invoice.isActive === false) {
+    throw ApiError.badRequest("This invoice is inactive. Reactivate it before making changes.");
+  }
+}
+
 /**
  * Compute money totals from raw line items + discount + GST split + any
  * balance carried forward from a previous invoice.
@@ -323,6 +337,7 @@ class InvoiceService {
       },
     });
     if (!invoice) throw ApiError.notFound("Invoice not found");
+    assertActive(invoice);
     if (invoice.status === "CANCELLED") {
       throw ApiError.badRequest("This invoice is cancelled and cannot be sent");
     }
@@ -415,6 +430,7 @@ class InvoiceService {
       where: {
         projectId,
         status: { not: "CANCELLED" },
+        isActive: true,
         ...(excludeInvoiceId ? { id: { not: excludeInvoiceId } } : {}),
       },
       orderBy: { issueDate: "desc" },
@@ -523,11 +539,16 @@ class InvoiceService {
     });
   }
 
-  async listInvoices(filters = {}) {
-    const { page = 1, limit = 10, status, projectId, clientId, search } = filters;
+  async listInvoices(filters = {}, user = null) {
+    const { page = 1, limit = 10, status, projectId, clientId, search, active } = filters;
     const skip = (page - 1) * limit;
 
     const where = {};
+    // Inactive invoices exist only for OWNER/ADMIN. Everyone else gets active
+    // ones regardless of what the query asks for.
+    if (!canSeeInactive(user)) where.isActive = true;
+    else if (active === "active") where.isActive = true;
+    else if (active === "inactive") where.isActive = false;
     if (status) where.status = status;
     if (projectId) where.projectId = projectId;
     if (clientId) where.clientId = clientId;
@@ -563,6 +584,11 @@ class InvoiceService {
     });
     if (!invoice) throw ApiError.notFound("Invoice not found");
 
+    // Indistinguishable from "does not exist" to anyone who may not see it.
+    if (!invoice.isActive && !canSeeInactive(user)) {
+      throw ApiError.notFound("Invoice not found");
+    }
+
     // CLIENT users may only view finalized invoices for their own client.
     if (user?.role === "CLIENT") {
       if (!user.clientId || invoice.clientId !== user.clientId || invoice.status === "DRAFT") {
@@ -579,7 +605,7 @@ class InvoiceService {
     if (user?.role !== "CLIENT" || !user.clientId) return { invoices: [], totals: { total: 0, paid: 0, due: 0 } };
 
     const invoices = await prisma.invoice.findMany({
-      where: { clientId: user.clientId, status: { not: "DRAFT" } },
+      where: { clientId: user.clientId, status: { not: "DRAFT" }, isActive: true },
       include: INVOICE_INCLUDE,
       orderBy: { issueDate: "desc" },
     });
@@ -602,6 +628,7 @@ class InvoiceService {
 
   async getInvoicesByProject(projectId, user = null) {
     const where = { projectId };
+    if (!canSeeInactive(user)) where.isActive = true;
 
     // CLIENT users: restrict to their own client + hide drafts.
     if (user?.role === "CLIENT") {
@@ -620,6 +647,7 @@ class InvoiceService {
   async updateInvoice(id, data) {
     const existing = await prisma.invoice.findUnique({ where: { id } });
     if (!existing) throw ApiError.notFound("Invoice not found");
+    assertActive(existing);
 
     // A paid or cancelled invoice is locked — block content edits.
     // (A pure amountPaid update, e.g. reconciliation, is still allowed.)
@@ -735,10 +763,39 @@ class InvoiceService {
     });
   }
 
-  async deleteInvoice(id) {
-    const existing = await prisma.invoice.findUnique({ where: { id } });
+  /**
+   * Soft delete. Replaces hard deletion entirely: an invoice is financial
+   * history, its payments must stay traceable, and its number must never be
+   * freed up for reuse. Deactivating takes it out of every total and hides it
+   * from everyone except OWNER/ADMIN, who can reactivate it.
+   */
+  async deactivateInvoice(id, user, reason = null) {
+    const existing = await prisma.invoice.findUnique({ where: { id }, select: { id: true, isActive: true } });
     if (!existing) throw ApiError.notFound("Invoice not found");
-    await prisma.invoice.delete({ where: { id } });
+    if (!existing.isActive) throw ApiError.badRequest("This invoice is already inactive");
+
+    return prisma.invoice.update({
+      where: { id },
+      data: {
+        isActive: false,
+        deactivatedAt: new Date(),
+        deactivatedById: user?.id || null,
+        deactivationReason: reason?.trim() || null,
+      },
+      include: INVOICE_INCLUDE,
+    });
+  }
+
+  async reactivateInvoice(id) {
+    const existing = await prisma.invoice.findUnique({ where: { id }, select: { id: true, isActive: true } });
+    if (!existing) throw ApiError.notFound("Invoice not found");
+    if (existing.isActive) throw ApiError.badRequest("This invoice is already active");
+
+    return prisma.invoice.update({
+      where: { id },
+      data: { isActive: true, deactivatedAt: null, deactivatedById: null, deactivationReason: null },
+      include: INVOICE_INCLUDE,
+    });
   }
 
   // ─── Payments ────────────────────────────────────────
@@ -793,9 +850,10 @@ class InvoiceService {
   async addPayment(id, data, userId) {
     const invoice = await prisma.invoice.findUnique({
       where: { id },
-      select: { id: true, total: true, amountPaid: true, status: true },
+      select: { id: true, total: true, amountPaid: true, status: true, isActive: true },
     });
     if (!invoice) throw ApiError.notFound("Invoice not found");
+    assertActive(invoice);
     if (invoice.status === "CANCELLED") {
       throw ApiError.badRequest("A cancelled invoice cannot take payments");
     }
@@ -840,6 +898,10 @@ class InvoiceService {
 
   /** Remove a wrongly-entered receipt; the invoice re-derives from what is left. */
   async removePayment(invoiceId, paymentId) {
+    const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId }, select: { isActive: true } });
+    if (!invoice) throw ApiError.notFound("Invoice not found");
+    assertActive(invoice);
+
     const payment = await prisma.invoicePayment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.invoiceId !== invoiceId) {
       throw ApiError.notFound("Payment not found on this invoice");

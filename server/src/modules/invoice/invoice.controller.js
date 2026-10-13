@@ -8,7 +8,7 @@ const createInvoice = catchAsync(async (req, res) => {
 });
 
 const listInvoices = catchAsync(async (req, res) => {
-  const result = await invoiceService.listInvoices(req.query);
+  const result = await invoiceService.listInvoices(req.query, req.user);
   return ok(res, "Invoices retrieved", result);
 });
 
@@ -37,9 +37,14 @@ const updateInvoice = catchAsync(async (req, res) => {
   return ok(res, "Invoice updated successfully", invoice);
 });
 
-const deleteInvoice = catchAsync(async (req, res) => {
-  await invoiceService.deleteInvoice(req.params.id);
-  return ok(res, "Invoice deleted successfully");
+const deactivateInvoice = catchAsync(async (req, res) => {
+  const invoice = await invoiceService.deactivateInvoice(req.params.id, req.user, req.body?.reason);
+  return ok(res, "Invoice marked inactive", invoice);
+});
+
+const reactivateInvoice = catchAsync(async (req, res) => {
+  const invoice = await invoiceService.reactivateInvoice(req.params.id);
+  return ok(res, "Invoice reactivated", invoice);
 });
 
 const addPayment = catchAsync(async (req, res) => {
@@ -65,7 +70,8 @@ export default {
   getInvoicesByProject,
   getPreviousDueSuggestion,
   updateInvoice,
-  deleteInvoice,
+  deactivateInvoice,
+  reactivateInvoice,
   addPayment,
   deletePayment,
   sendInvoice,

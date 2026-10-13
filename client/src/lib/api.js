@@ -1370,8 +1370,17 @@ export async function updateInvoiceAPI(id, data, accessToken) {
   });
 }
 
-export async function deleteInvoiceAPI(id, accessToken) {
-  return request(`/api/invoices/${id}`, { method: "DELETE", token: accessToken });
+// Invoices are never hard-deleted — they are deactivated (soft delete).
+export async function deactivateInvoiceAPI(id, reason, accessToken) {
+  return request(`/api/invoices/${id}/deactivate`, {
+    method: "PATCH",
+    body: JSON.stringify({ reason: reason || null }),
+    token: accessToken,
+  });
+}
+
+export async function reactivateInvoiceAPI(id, accessToken) {
+  return request(`/api/invoices/${id}/reactivate`, { method: "PATCH", token: accessToken });
 }
 
 /* ───────── Announcements ───────── */

@@ -980,13 +980,14 @@ async function getProfitAndLoss(range = { from: null, to: null }) {
     prisma.invoice.aggregate({
       where: {
         status: { notIn: ["DRAFT", "CANCELLED"] },
+        isActive: true,
         ...(window ? { issueDate: window } : {}),
       },
       _sum: { total: true, amountPaid: true },
     }),
 
     prisma.invoicePayment.aggregate({
-      where: window ? { paidAt: window } : {},
+      where: { invoice: { isActive: true }, ...(window ? { paidAt: window } : {}) },
       _sum: { amount: true },
     }),
   ]);
@@ -1068,14 +1069,14 @@ export async function getFinanceDashboardStats(rangeInput = {}) {
   ] = await Promise.all([
     prisma.invoice.groupBy({
       by: ["status"],
-      where: window ? { issueDate: window } : {},
+      where: { isActive: true, ...(window ? { issueDate: window } : {}) },
       _count: { id: true },
       _sum: { total: true, amountPaid: true },
     }),
 
     // Anything still owed, for the outstanding figure and the top-debtor list.
     prisma.invoice.findMany({
-      where: { status: { in: OPEN_STATUSES } },
+      where: { status: { in: OPEN_STATUSES }, isActive: true },
       select: {
         id: true, invoiceNumber: true, total: true, amountPaid: true, dueDate: true, status: true,
         client: { select: { id: true, companyName: true } },
@@ -1084,24 +1085,24 @@ export async function getFinanceDashboardStats(rangeInput = {}) {
     }),
 
     prisma.invoice.aggregate({
-      where: { status: "PAID", paidAt: { gte: monthStart } },
+      where: { status: "PAID", paidAt: { gte: monthStart }, isActive: true },
       _sum: { total: true },
       _count: { id: true },
     }),
 
     prisma.invoice.aggregate({
-      where: { status: "PAID", paidAt: { gte: yearStart } },
+      where: { status: "PAID", paidAt: { gte: yearStart }, isActive: true },
       _sum: { total: true },
     }),
 
     // Raw rows for the 6-month trend; grouping by month happens below.
     prisma.invoice.findMany({
-      where: { issueDate: { gte: trendStart } },
+      where: { issueDate: { gte: trendStart }, isActive: true },
       select: { issueDate: true, total: true, amountPaid: true, status: true },
     }),
 
     prisma.invoice.findMany({
-      where: window ? { issueDate: window } : {},
+      where: { isActive: true, ...(window ? { issueDate: window } : {}) },
       take: 8,
       orderBy: { issueDate: "desc" },
       select: {
@@ -1116,6 +1117,7 @@ export async function getFinanceDashboardStats(rangeInput = {}) {
       where: {
         status: { in: OPEN_STATUSES },
         dueDate: { lt: now },
+        isActive: true,
       },
       take: 6,
       orderBy: { dueDate: "asc" },

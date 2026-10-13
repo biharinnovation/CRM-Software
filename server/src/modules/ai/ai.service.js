@@ -1054,7 +1054,7 @@ class AiService {
         return { entity: "services", count: rows.length, items: rows };
       }
       case "invoices": {
-        const where = status ? { status } : {};
+        const where = { isActive: true, ...(status ? { status } : {}) };
         const rows = await prisma.invoice.findMany({
           where, take, orderBy,
           select: {

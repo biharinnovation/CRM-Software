@@ -633,7 +633,7 @@ class ExpenseService {
       }),
       // What the client has actually been billed, for margin.
       prisma.invoice.aggregate({
-        where: { projectId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+        where: { projectId, status: { notIn: ["DRAFT", "CANCELLED"] }, isActive: true },
         _sum: { total: true, amountPaid: true },
       }),
     ]);

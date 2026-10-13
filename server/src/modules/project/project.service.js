@@ -244,7 +244,7 @@ class ProjectService {
 
     const [invoices, expenses, tasks, adStats] = await Promise.all([
       prisma.invoice.findMany({
-        where: { projectId, status: { not: "CANCELLED" } },
+        where: { projectId, status: { not: "CANCELLED" }, isActive: true },
         select: {
           id: true, invoiceNumber: true, status: true, total: true, amountPaid: true,
           issueDate: true, dueDate: true,

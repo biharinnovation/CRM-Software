@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, ReceiptText, Trash2, Eye, Loader2, X, Search, FolderKanban } from "lucide-react";
+import { Plus, ReceiptText, Ban, RotateCcw, Eye, Loader2, X, Search, FolderKanban } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
-import Badge from "@/components/ui/Badge";
-import ConfirmModal from "@/components/ui/ConfirmModal";
 import Toast from "@/components/ui/Toast";
 import { useSite } from "@/context/SiteContext";
-import { getInvoices, deleteInvoice } from "@/actions/invoices.action";
+import { useAuth } from "@/context/AuthContext";
+import { getInvoices, deactivateInvoice, reactivateInvoice } from "@/actions/invoices.action";
+import DeactivateInvoiceModal from "./DeactivateInvoiceModal";
 import { getProjects } from "@/actions/projects.action";
 
 const STATUS_STYLES = {
@@ -28,8 +28,15 @@ export default function InvoicesListContent({ basePath, initialData }) {
   const [invoices, setInvoices] = useState(initialData?.invoices || []);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [deletingId, setDeletingId] = useState(null);
   const [toast, setToast] = useState(null);
+
+  // Invoices are never deleted — they are marked inactive. Only Owner/Admin
+  // can see inactive ones (the server enforces it; this only drives the UI).
+  const { user } = useAuth();
+  const canSeeInactive = ["OWNER", "ADMIN"].includes(user?.role);
+  const [activeFilter, setActiveFilter] = useState("active"); // "active" | "inactive" | "all"
+  const [deactivating, setDeactivating] = useState(null); // invoice being marked inactive
+  const [actionPending, setActionPending] = useState(false);
 
   // Project picker modal
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -41,10 +48,16 @@ export default function InvoicesListContent({ basePath, initialData }) {
 
   const refresh = useCallback(() => {
     startTransition(async () => {
-      const res = await getInvoices({ page: 1, limit: 50, search, status: statusFilter });
+      const res = await getInvoices({
+        page: 1,
+        limit: 50,
+        search,
+        status: statusFilter,
+        ...(canSeeInactive ? { active: activeFilter } : {}),
+      });
       if (res.success) setInvoices(res.data.invoices || []);
     });
-  }, [search, statusFilter]);
+  }, [search, statusFilter, activeFilter, canSeeInactive]);
 
   useEffect(() => {
     const t = setTimeout(refresh, 300);
@@ -64,16 +77,41 @@ export default function InvoicesListContent({ basePath, initialData }) {
     router.push(`${basePath}/invoices/create?projectId=${projectId}`);
   };
 
-  const handleDelete = async () => {
-    if (!deletingId) return;
-    const res = await deleteInvoice(deletingId);
+  /** Swap one row for the server's copy, or drop it if the current filter no longer includes it. */
+  const applyRow = (updated) => {
+    const stillShown =
+      activeFilter === "all" || (activeFilter === "active" ? updated.isActive : !updated.isActive);
+    setInvoices((prev) =>
+      stillShown
+        ? prev.map((i) => (i.id === updated.id ? updated : i))
+        : prev.filter((i) => i.id !== updated.id)
+    );
+  };
+
+  const handleDeactivate = async (reason) => {
+    if (!deactivating) return;
+    setActionPending(true);
+    const res = await deactivateInvoice(deactivating.id, reason);
+    setActionPending(false);
     if (res.success) {
-      setInvoices((prev) => prev.filter((i) => i.id !== deletingId));
-      showToast("success", "Invoice deleted");
+      // Anyone but Owner/Admin loses sight of it entirely once inactive.
+      if (canSeeInactive) applyRow(res.data);
+      else setInvoices((prev) => prev.filter((i) => i.id !== deactivating.id));
+      showToast("success", `${deactivating.invoiceNumber} marked inactive`);
+      setDeactivating(null);
     } else {
-      showToast("error", res.error || "Failed to delete");
+      showToast("error", res.error || "Failed to mark invoice inactive");
     }
-    setDeletingId(null);
+  };
+
+  const handleReactivate = async (inv) => {
+    const res = await reactivateInvoice(inv.id);
+    if (res.success) {
+      applyRow(res.data);
+      showToast("success", `${inv.invoiceNumber} reactivated`);
+    } else {
+      showToast("error", res.error || "Failed to reactivate invoice");
+    }
   };
 
   const filteredProjects = projects.filter((p) =>
@@ -122,6 +160,17 @@ export default function InvoicesListContent({ basePath, initialData }) {
           <option value="OVERDUE">Overdue</option>
           <option value="CANCELLED">Cancelled</option>
         </select>
+        {canSeeInactive && (
+          <select
+            value={activeFilter}
+            onChange={(e) => setActiveFilter(e.target.value)}
+            className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-50 outline-none"
+          >
+            <option value="active">Active invoices</option>
+            <option value="inactive">Inactive invoices</option>
+            <option value="all">Active + inactive</option>
+          </select>
+        )}
       </div>
 
       {/* Table */}
@@ -131,7 +180,9 @@ export default function InvoicesListContent({ basePath, initialData }) {
         ) : invoices.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <ReceiptText className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-3" />
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">No invoices yet.</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+              {activeFilter === "inactive" ? "No inactive invoices." : "No invoices yet."}
+            </p>
             <button onClick={openPicker} className="text-sm px-4 py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg hover:bg-indigo-100">
               Create your first invoice
             </button>
@@ -153,10 +204,19 @@ export default function InvoicesListContent({ basePath, initialData }) {
               {invoices.map((inv) => (
                 <tr
                   key={inv.id}
-                  className="border-b border-slate-50 dark:border-slate-900 hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer"
+                  className={`border-b border-slate-50 dark:border-slate-900 hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer ${
+                    inv.isActive === false ? "opacity-60" : ""
+                  }`}
                   onClick={() => router.push(`${basePath}/invoices/${inv.id}`)}
                 >
-                  <td className="px-5 py-3 font-mono text-slate-900 dark:text-slate-50">{inv.invoiceNumber}</td>
+                  <td className="px-5 py-3 font-mono text-slate-900 dark:text-slate-50">
+                    {inv.invoiceNumber}
+                    {inv.isActive === false && (
+                      <span className="ml-2 align-middle px-1.5 py-0.5 rounded font-sans text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                        Inactive
+                      </span>
+                    )}
+                  </td>
                   <td className="px-5 py-3 text-slate-600 dark:text-slate-300">{inv.project?.name || "—"}</td>
                   <td className="px-5 py-3 text-slate-600 dark:text-slate-300">{inv.billToName || "—"}</td>
                   <td className="px-5 py-3">
@@ -173,9 +233,17 @@ export default function InvoicesListContent({ basePath, initialData }) {
                       <button onClick={() => router.push(`${basePath}/invoices/${inv.id}`)} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md" title="View">
                         <Eye className="w-4 h-4 text-slate-400" />
                       </button>
-                      <button onClick={() => setDeletingId(inv.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md" title="Delete">
-                        <Trash2 className="w-4 h-4 text-red-400" />
-                      </button>
+                      {inv.isActive === false ? (
+                        canSeeInactive && (
+                          <button onClick={() => handleReactivate(inv)} className="p-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md" title="Reactivate">
+                            <RotateCcw className="w-4 h-4 text-emerald-500" />
+                          </button>
+                        )
+                      ) : (
+                        <button onClick={() => setDeactivating(inv)} className="p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md" title="Mark inactive">
+                          <Ban className="w-4 h-4 text-amber-500" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -233,14 +301,12 @@ export default function InvoicesListContent({ basePath, initialData }) {
         </div>
       )}
 
-      <ConfirmModal
-        isOpen={!!deletingId}
-        onClose={() => setDeletingId(null)}
-        onConfirm={handleDelete}
-        title="Delete Invoice"
-        message="This permanently removes the invoice. Continue?"
-        confirmLabel="Delete"
-        variant="danger"
+      <DeactivateInvoiceModal
+        isOpen={!!deactivating}
+        invoiceNumber={deactivating?.invoiceNumber}
+        onClose={() => setDeactivating(null)}
+        onConfirm={handleDeactivate}
+        isPending={actionPending}
       />
     </div>
   );

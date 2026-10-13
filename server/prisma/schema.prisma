@@ -697,6 +697,15 @@ model Invoice {
 
   payments InvoicePayment[]
 
+  /// Soft delete. An invoice is never hard-deleted — it is financial history,
+  /// and its number must never be reused. An inactive invoice drops out of
+  /// every total, cannot be edited, paid or sent, and is visible only to
+  /// OWNER and ADMIN.
+  isActive           Boolean   @default(true) @map("is_active")
+  deactivatedAt      DateTime? @map("deactivated_at")
+  deactivatedById    String?   @map("deactivated_by_id")
+  deactivationReason String?   @map("deactivation_reason") @db.Text
+
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
@@ -704,6 +713,7 @@ model Invoice {
   @@index([clientId])
   @@index([status])
   @@index([issueDate])
+  @@index([isActive])
   @@map("invoices")
 }
 

@@ -10,6 +10,7 @@ import {
   addPaymentSchema,
   paymentIdParamSchema,
   sendInvoiceSchema,
+  deactivateInvoiceSchema,
 } from "./invoice.validation.js";
 import controller from "./invoice.controller.js";
 
@@ -30,7 +31,11 @@ router.get("/project/:projectId", canRead, controller.getInvoicesByProject);
 router.get("/project/:projectId/previous-due", canManage, controller.getPreviousDueSuggestion);
 router.get("/:id", canRead, validate(getInvoiceSchema), controller.getInvoice);
 router.patch("/:id", canManage, validate(updateInvoiceSchema), controller.updateInvoice);
-router.delete("/:id", canManage, validate(getInvoiceSchema), controller.deleteInvoice);
+// No hard delete — invoices are soft-deleted. Anyone who manages invoices can
+// deactivate one; only OWNER/ADMIN, the only roles who can still see it, can
+// bring it back.
+router.patch("/:id/deactivate", canManage, validate(deactivateInvoiceSchema), controller.deactivateInvoice);
+router.patch("/:id/reactivate", authorize("OWNER", "ADMIN"), validate(getInvoiceSchema), controller.reactivateInvoice);
 
 // Recording money received — same roles that manage the invoice.
 router.post("/:id/send", canManage, validate(sendInvoiceSchema), controller.sendInvoice);

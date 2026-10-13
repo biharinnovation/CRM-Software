@@ -8,7 +8,8 @@ import {
   getMyInvoicesAPI,
   createInvoiceAPI,
   updateInvoiceAPI,
-  deleteInvoiceAPI,
+  deactivateInvoiceAPI,
+  reactivateInvoiceAPI,
   getInvoiceConfigAPI,
   sendInvoiceEmailAPI,
   addInvoicePaymentAPI,
@@ -101,15 +102,27 @@ export async function getInvoiceConfig() {
   }
 }
 
-export async function deleteInvoice(id) {
+export async function deactivateInvoice(id, reason = null) {
   const token = await getToken();
   if (!token) return { success: false, error: "Not authenticated" };
   try {
-    const res = await deleteInvoiceAPI(id, token);
-    if (res.success) return { success: true };
+    const res = await deactivateInvoiceAPI(id, reason, token);
+    if (res.success) return { success: true, data: res.data };
     return { success: false, error: res.message };
   } catch (err) {
-    return { success: false, error: err.message || "Failed to delete invoice" };
+    return { success: false, error: err.message || "Failed to mark invoice inactive" };
+  }
+}
+
+export async function reactivateInvoice(id) {
+  const token = await getToken();
+  if (!token) return { success: false, error: "Not authenticated" };
+  try {
+    const res = await reactivateInvoiceAPI(id, token);
+    if (res.success) return { success: true, data: res.data };
+    return { success: false, error: res.message };
+  } catch (err) {
+    return { success: false, error: err.message || "Failed to reactivate invoice" };
   }
 }
 

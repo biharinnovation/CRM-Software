@@ -68,13 +68,21 @@ export default function ProjectInvoicesSection({ projectId, basePath, readOnly =
             <button
               key={inv.id}
               onClick={() => router.push(`${basePath}/invoices/${inv.id}`)}
-              className="w-full flex items-center justify-between gap-3 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-900/50 -mx-2 px-2 rounded-lg transition-colors"
+              className={`w-full flex items-center justify-between gap-3 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-900/50 -mx-2 px-2 rounded-lg transition-colors ${
+                inv.isActive === false ? "opacity-60" : ""
+              }`}
             >
               <div className="flex items-center gap-3 min-w-0">
                 <span className="font-mono text-sm text-slate-900 dark:text-slate-50">{inv.invoiceNumber}</span>
                 <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${STATUS_STYLES[inv.status] || ""}`}>
                   {inv.status.replace("_", " ")}
                 </span>
+                {/* Only Owner/Admin ever receive inactive invoices from the server. */}
+                {inv.isActive === false && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    Inactive
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-4 shrink-0">
                 <span className="text-xs text-slate-400">{new Date(inv.issueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>

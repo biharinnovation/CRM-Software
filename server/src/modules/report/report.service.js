@@ -78,7 +78,7 @@ class ReportService {
         }),
 
         prisma.invoice.findMany({
-          where: { projectId, status: { not: "CANCELLED" }, issueDate: { gte: from, lte: to } },
+          where: { projectId, status: { not: "CANCELLED" }, isActive: true, issueDate: { gte: from, lte: to } },
           select: {
             id: true, invoiceNumber: true, status: true, total: true, amountPaid: true,
             issueDate: true, dueDate: true,
@@ -87,7 +87,7 @@ class ReportService {
         }),
 
         prisma.invoicePayment.findMany({
-          where: { invoice: { projectId }, paidAt: { gte: from, lte: to } },
+          where: { invoice: { projectId, isActive: true }, paidAt: { gte: from, lte: to } },
           select: {
             id: true, amount: true, method: true, paidAt: true, referenceNo: true,
             invoice: { select: { invoiceNumber: true } },

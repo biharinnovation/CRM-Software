@@ -68,7 +68,16 @@ export const listInvoicesSchema = z.object({
     projectId: z.preprocess(emptyToUndefined, z.string().optional()),
     clientId: z.preprocess(emptyToUndefined, z.string().optional()),
     search: z.preprocess(emptyToUndefined, z.string().optional()),
+    // OWNER/ADMIN only — ignored for everyone else, who only ever see active.
+    active: z.preprocess(emptyToUndefined, z.enum(["all", "active", "inactive"]).optional()),
   }),
+});
+
+export const deactivateInvoiceSchema = z.object({
+  params: z.object({ id: z.string().min(1) }),
+  body: z.object({
+    reason: z.string().max(1000).optional().nullable(),
+  }).optional(),
 });
 
 export const getInvoiceSchema = z.object({
