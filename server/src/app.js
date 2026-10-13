@@ -149,7 +149,9 @@ app.use("/api/payment-accounts", paymentAccountRoutes);
 // without a restart.
 const OPENAPI_FILE = new URL("../docs/openapi.json", import.meta.url);
 
-app.get("/docs-json", async (_req, res) => {
+// Under /api like every other endpoint — in production only /api/* is routed
+// to this server; any other path is answered by the web app.
+app.get("/api/docs-json", async (_req, res) => {
   try {
     res.type("application/json").send(await fs.promises.readFile(OPENAPI_FILE, "utf8"));
   } catch {

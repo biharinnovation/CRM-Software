@@ -76,7 +76,7 @@ const startServer = async () => {
       // always matches the code that is actually running. Done after listen and
       // never awaited: the docs must not be able to delay or stop the API.
       generateOpenApi()
-        .then((r) => console.log(`📘 OpenAPI spec ${r.changed ? "regenerated" : "up to date"}: ${r.operations} operations → /docs-json`))
+        .then((r) => console.log(`📘 OpenAPI spec ${r.changed ? "regenerated" : "up to date"}: ${r.operations} operations → /api/docs-json`))
         .catch((err) => console.error("⚠️  OpenAPI spec generation failed (API unaffected):", err.message));
     });
   } catch (error) {
