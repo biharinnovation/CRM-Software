@@ -200,5 +200,6 @@ next-env.d.ts
 !*.csv.jsx
 
 uploads/
+server/docs
 
 .claude

@@ -5,7 +5,7 @@ import { ApiError } from "../utils/apiError.js";
  * Usage: validate(loginSchema)
  */
 const validate = (schema) => {
-  return (req, _res, next) => {
+  const middleware = (req, _res, next) => {
     const result = schema.safeParse({
       body: req.body,
       query: req.query,
@@ -34,6 +34,9 @@ const validate = (schema) => {
 
     next();
   };
+  // Read by scripts/generate-openapi.js to document the route. No runtime effect.
+  middleware.schema = schema;
+  return middleware;
 };
 
 export default validate;

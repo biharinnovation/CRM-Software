@@ -2,10 +2,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
+import fs from "node:fs";
 import config from "./config/index.js";
 import { errorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
 
@@ -146,51 +143,22 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/project-cycles", projectCycleRoutes);
 app.use("/api/payment-accounts", paymentAccountRoutes);
 
-app.get("/pullAndDeploy", async (_req, res) => {
+// ─── API Docs ────────────────────────────────────────────
+// The OpenAPI spec, generated from the route table by
+// `npm run docs:openapi`. Read per request so a regenerated file is served
+// without a restart.
+const OPENAPI_FILE = new URL("../docs/openapi.json", import.meta.url);
 
-
-  if (config.env !== "production") {
-    return res.status(403).send("Deployment is not allowed in development mode");
-  }
-
-  if (_req.query.secret !== config.pullAndDeploySecret) {
-    return res.status(403).send("Invalid secret");
-  }
-
+app.get("/docs-json", async (_req, res) => {
   try {
-
-    console.log("Deploying Client...");
-
-    const clientResult = await execAsync(
-      `cd ~/CRM-Software &&
-       git pull origin main &&
-       cd client && bun install && bun run build &&
-       pm2 reload crm-client`
-    );
-    console.log("Client deploy stdout:", clientResult.stdout);
-    if (clientResult.stderr) console.error("Client deploy stderr:", clientResult.stderr);
-
-    console.log("Deploying Server...");
-
-    const serverResult = await execAsync(
-      `cd ~/CRM-Software &&
-       cd server && bun install &&
-       bun x prisma db push && bun x prisma generate &&
-       pm2 reload crm-api`
-    );
-    console.log("Server deploy stdout:", serverResult.stdout);
-    if (serverResult.stderr) console.error("Server deploy stderr:", serverResult.stderr);
-
-    res.send("Deployment successful 🚀");
+    res.type("application/json").send(await fs.promises.readFile(OPENAPI_FILE, "utf8"));
+  } catch {
+    res.status(404).json({
+      success: false,
+      message: "API spec not found.",
+    });
   }
-  catch (error) {
-    console.error("Deployment failed:", error.message);
-    if (error.stdout) console.error("stdout:", error.stdout);
-    if (error.stderr) console.error("stderr:", error.stderr);
-    return res.status(500).send(`Deployment failed: ${error.message}`);
-  }
-
-})
+});
 
 // ─── Error Handling ──────────────────────────────────────
 app.use(notFoundHandler);

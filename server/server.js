@@ -3,6 +3,7 @@ import config from "./src/config/index.js";
 import notificationService from "./src/modules/notification/notification.service.js";
 import prisma from "./src/utils/prisma.js";
 import bcrypt from "bcryptjs";
+import { generateOpenApi } from "./scripts/generate-openapi.js";
 
 const createAccounts = async () => {
 
@@ -70,6 +71,13 @@ const startServer = async () => {
     app.listen(config.port, () => {
       console.log(`🚀 Server running on port ${config.port} [${config.env}]`);
       console.log(`📍 Health check: http://localhost:${config.port}/api/health`);
+
+      // Regenerate the OpenAPI spec from the routes now loaded, so /docs-json
+      // always matches the code that is actually running. Done after listen and
+      // never awaited: the docs must not be able to delay or stop the API.
+      generateOpenApi()
+        .then((r) => console.log(`📘 OpenAPI spec ${r.changed ? "regenerated" : "up to date"}: ${r.operations} operations → /docs-json`))
+        .catch((err) => console.error("⚠️  OpenAPI spec generation failed (API unaffected):", err.message));
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error.message);

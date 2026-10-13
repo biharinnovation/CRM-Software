@@ -5,7 +5,7 @@ import { ApiError } from "../utils/apiError.js";
  * Usage: authorize("OWNER", "ADMIN")
  */
 const authorize = (...allowedRoles) => {
-  return (req, _res, next) => {
+  const middleware = (req, _res, next) => {
     if (!req.user) {
       return next(ApiError.unauthorized("Authentication required"));
     }
@@ -20,6 +20,9 @@ const authorize = (...allowedRoles) => {
 
     next();
   };
+  // Read by scripts/generate-openapi.js to document the route. No runtime effect.
+  middleware.roles = allowedRoles;
+  return middleware;
 };
 
 export default authorize;
